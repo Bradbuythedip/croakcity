@@ -6,6 +6,7 @@ import Header from './components/Header';
 import MintingCard from './components/MintingCard';
 import SentimentAnalysis from './components/SentimentAnalysis';
 import FearGreedIndex from './components/FearGreedIndex';
+import RealTimePoWData from './components/RealTimePoWData';
 import Roadmap from './components/Roadmap';
 import Footer from './components/Footer';
 
@@ -94,6 +95,7 @@ function App() {
             
             <div className="space-y-16">
               <MintingCard />
+              <RealTimePoWData />
               <FearGreedIndex />
               <SentimentAnalysis />
               <Roadmap />
