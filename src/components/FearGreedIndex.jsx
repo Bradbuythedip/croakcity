@@ -3,6 +3,23 @@ import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
 import CircularProgress from '@mui/material/CircularProgress';
 import { motion } from 'framer-motion';
+import axios from 'axios';
+
+const COINGECKO_API_KEY = 'CG-ByorJkP4D1f5QfzdPzH4eg7w';
+
+// List of PoW coins we want to track
+const POW_COINS = [
+  'bitcoin',
+  'litecoin',
+  'dogecoin',
+  'monero',
+  'zcash',
+  'ravencoin',
+  'ergo',
+  'kadena',
+  'nervos-network',
+  'quai-network'
+];
 
 const getEmotionColor = (value) => {
   if (value >= 0 && value <= 20) return '#E74C3C'; // Extreme Fear - Red
@@ -79,21 +96,76 @@ const FearGreedCard = ({ chain, value }) => {
   );
 };
 
+const calculateSentiment = (coin) => {
+  // Calculate sentiment based on various metrics
+  const priceChangeWeight = 0.4;
+  const volumeChangeWeight = 0.3;
+  const marketCapChangeWeight = 0.3;
+
+  const priceChange = Math.min(Math.max(coin.price_change_percentage_24h || 0, -100), 100);
+  const volumeChange = Math.min(Math.max(coin.volume_change_24h || 0, -100), 100);
+  const marketCapChange = Math.min(Math.max(coin.market_cap_change_percentage_24h || 0, -100), 100);
+
+  // Convert changes to 0-100 scale
+  const priceScore = ((priceChange + 100) / 2);
+  const volumeScore = ((volumeChange + 100) / 2);
+  const marketCapScore = ((marketCapChange + 100) / 2);
+
+  // Weighted average
+  const sentiment = Math.round(
+    priceScore * priceChangeWeight +
+    volumeScore * volumeChangeWeight +
+    marketCapScore * marketCapChangeWeight
+  );
+
+  return Math.min(Math.max(sentiment, 0), 100);
+};
+
 const FearGreedIndex = () => {
-  // This would normally come from an API
-  // For now using mock data
-  const powChains = [
-    { name: 'Bitcoin', value: 55 },
-    { name: 'Litecoin', value: 48 },
-    { name: 'Dogecoin', value: 62 },
-    { name: 'Monero', value: 35 },
-    { name: 'Zcash', value: 42 },
-    { name: 'RavenCoin', value: 28 },
-    { name: 'Quai', value: 75 },
-    { name: 'Ergo', value: 45 },
-    { name: 'Kadena', value: 52 },
-    { name: 'Nervos', value: 38 }
-  ];
+  const [powChains, setPowChains] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await axios.get(
+          `https://pro-api.coingecko.com/api/v3/coins/markets`, {
+          params: {
+            vs_currency: 'usd',
+            ids: POW_COINS.join(','),
+            order: 'market_cap_desc',
+            sparkline: false,
+            price_change_percentage: '24h',
+            locale: 'en',
+          },
+          headers: {
+            'x-cg-pro-api-key': COINGECKO_API_KEY
+          }
+        });
+
+        const chainsData = response.data.map(coin => ({
+          name: coin.name,
+          value: calculateSentiment(coin),
+          priceChange24h: coin.price_change_percentage_24h,
+          currentPrice: coin.current_price,
+          marketCap: coin.market_cap
+        }));
+
+        setPowChains(chainsData);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to fetch market data');
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 300000); // Update every 5 minutes
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -106,19 +178,64 @@ const FearGreedIndex = () => {
         </Typography>
       </div>
       
-      <Grid container spacing={3}>
-        {powChains.map((chain) => (
-          <Grid item xs={12} sm={6} md={3} key={chain.name}>
-            <FearGreedCard chain={chain.name} value={chain.value} />
+      {loading ? (
+        <div className="text-center py-12">
+          <CircularProgress />
+          <Typography variant="body2" className="text-gray-400 mt-4">
+            Loading market data...
+          </Typography>
+        </div>
+      ) : error ? (
+        <div className="text-center py-12">
+          <Typography variant="body1" className="text-red-400">
+            {error}
+          </Typography>
+        </div>
+      ) : (
+        <>
+          <Grid container spacing={3}>
+            {powChains.map((chain) => (
+              <Grid item xs={12} sm={6} md={3} key={chain.name}>
+                <FearGreedCard
+                  chain={chain.name}
+                  value={chain.value}
+                />
+                <div className="mt-2 text-center">
+                  <Typography variant="caption" className="text-gray-400">
+                    Price: ${chain.currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <br />
+                    24h: <span className={chain.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      {chain.priceChange24h?.toFixed(2)}%
+                    </span>
+                  </Typography>
+                </div>
+              </Grid>
+            ))}
           </Grid>
-        ))}
-      </Grid>
 
-      <div className="mt-6 text-center">
-        <Typography variant="body2" className="text-gray-400">
-          0-20: Extreme Fear • 21-40: Fear • 41-60: Neutral • 61-80: Greed • 81-100: Extreme Greed
-        </Typography>
-      </div>
+          <div className="mt-6 text-center space-y-2">
+            <Typography variant="body2" className="text-gray-400">
+              0-20: Extreme Fear • 21-40: Fear • 41-60: Neutral • 61-80: Greed • 81-100: Extreme Greed
+            </Typography>
+            <div className="flex items-center justify-center gap-2">
+              <Typography variant="caption" className="text-gray-500">
+                Powered by
+              </Typography>
+              <a
+                href="https://www.coingecko.com/en/api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gray-400 hover:text-gray-300 transition-colors"
+              >
+                CoinGecko API
+              </a>
+              <Typography variant="caption" className="text-gray-500">
+                • Updates every 5 minutes
+              </Typography>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
