@@ -1,14 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 
 // Quai Network Chain IDs
-const QUAI_CHAIN_IDS = {
-  PRIME: '0x2329', // 9001
-  REGION1: '0x232a', // 9002
-  REGION2: '0x232b', // 9003
-  REGION3: '0x232c', // 9004
+const QUAI_ZONES = {
+  PRIME: '0x1',
+  CYPRUS1: '0x2',
+  CYPRUS2: '0x3',
+  CYPRUS3: '0x4',
+  PAXOS1: '0x5',
+  PAXOS2: '0x6',
+  PAXOS3: '0x7',
+  HYDRA1: '0x8',
+  HYDRA2: '0x9',
+  HYDRA3: '0xa'
 };
 
-const PELAGUS_DOWNLOAD_URL = 'https://chrome.google.com/webstore/detail/pelagus/gaegollnpijhedifeeeepdoffkgfcmbc';
+const PELAGUS_DOWNLOAD_URL = 'https://pelaguswallet.io/';
 
 const usePelagusWallet = () => {
   const [account, setAccount] = useState(null);
@@ -16,13 +22,39 @@ const usePelagusWallet = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState(null);
   const [isPelagus, setIsPelagus] = useState(false);
+  const [provider, setProvider] = useState(null);
 
+  // Check if Pelagus is installed
   const isPelagusInstalled = useCallback(() => {
-    return window.ethereum?.isPelagus === true;
+    if (typeof window !== 'undefined') {
+      const { pelaguswallet } = window;
+      return Boolean(pelaguswallet && pelaguswallet.isQuai);
+    }
+    return false;
   }, []);
 
-  const isQuaiNetwork = useCallback((chainId) => {
-    return Object.values(QUAI_CHAIN_IDS).includes(chainId?.toLowerCase());
+  // Check if we're on Quai Network
+  const isQuaiNetwork = useCallback((zoneId) => {
+    return Object.values(QUAI_ZONES).includes(zoneId?.toLowerCase());
+  }, []);
+
+  // Initialize provider
+  const initializeProvider = useCallback(async () => {
+    if (typeof window !== 'undefined' && window.pelaguswallet) {
+      try {
+        // Request access to the wallet
+        await window.pelaguswallet.request({ method: 'quai_requestAccounts' });
+        
+        // Create Web3Provider
+        const web3Provider = window.pelaguswallet;
+        setProvider(web3Provider);
+        return web3Provider;
+      } catch (error) {
+        console.error('Error initializing provider:', error);
+        throw error;
+      }
+    }
+    return null;
   }, []);
 
   const checkIfWalletIsConnected = useCallback(async () => {
@@ -33,25 +65,32 @@ const usePelagusWallet = () => {
       }
 
       setIsPelagus(true);
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      const web3Provider = await initializeProvider();
       
+      if (!web3Provider) {
+        setError('Could not connect to Pelagus wallet');
+        return;
+      }
+
+      // Get the zone (chain) ID
+      const zoneId = await web3Provider.request({ method: 'quai_zoneId' });
+      if (!isQuaiNetwork(zoneId)) {
+        setError('Please connect to Quai Network');
+        return;
+      }
+      setChainId(zoneId);
+
+      // Get accounts
+      const accounts = await web3Provider.request({ method: 'quai_accounts' });
       if (accounts.length > 0) {
         setAccount(accounts[0]);
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        
-        if (!isQuaiNetwork(chainId)) {
-          setError('Please connect to Quai Network');
-          return;
-        }
-        
-        setChainId(chainId);
         setError(null);
       }
     } catch (error) {
       console.error('Error checking wallet connection:', error);
       setError('Error checking wallet connection');
     }
-  }, [isPelagusInstalled, isQuaiNetwork]);
+  }, [isPelagusInstalled, initializeProvider, isQuaiNetwork]);
 
   const connectWallet = async () => {
     try {
@@ -63,19 +102,25 @@ const usePelagusWallet = () => {
         throw new Error('Please install Pelagus wallet');
       }
 
-      // Request account access
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const web3Provider = await initializeProvider();
+      if (!web3Provider) {
+        throw new Error('Could not connect to Pelagus wallet');
+      }
+
+      // Get accounts
+      const accounts = await web3Provider.request({ method: 'quai_accounts' });
+      if (accounts.length === 0) {
+        throw new Error('No accounts found');
+      }
       setAccount(accounts[0]);
 
-      // Get chain ID
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      
-      if (!isQuaiNetwork(chainId)) {
+      // Get zone ID
+      const zoneId = await web3Provider.request({ method: 'quai_zoneId' });
+      if (!isQuaiNetwork(zoneId)) {
         setError('Please connect to Quai Network');
         return;
       }
-      
-      setChainId(chainId);
+      setChainId(zoneId);
 
     } catch (error) {
       console.error('Error connecting wallet:', error);
@@ -89,6 +134,7 @@ const usePelagusWallet = () => {
   const disconnectWallet = () => {
     setAccount(null);
     setChainId(null);
+    setProvider(null);
     setError(null);
   };
 
@@ -102,38 +148,33 @@ const usePelagusWallet = () => {
     }
   }, []);
 
-  // Handle chain changes
-  const handleChainChanged = useCallback((newChainId) => {
-    if (!isQuaiNetwork(newChainId)) {
+  // Handle zone changes
+  const handleZoneChanged = useCallback((newZoneId) => {
+    if (!isQuaiNetwork(newZoneId)) {
       setError('Please connect to Quai Network');
     } else {
       setError(null);
     }
-    setChainId(newChainId);
+    setChainId(newZoneId);
   }, [isQuaiNetwork]);
-
-  // Handle disconnection
-  const handleDisconnect = useCallback(() => {
-    disconnectWallet();
-  }, []);
 
   useEffect(() => {
     checkIfWalletIsConnected();
 
-    if (window.ethereum) {
-      // Set up event listeners
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
-      window.ethereum.on('disconnect', handleDisconnect);
+    if (window.pelaguswallet) {
+      // Set up event listeners for Pelagus wallet
+      window.pelaguswallet.on('accountsChanged', handleAccountsChanged);
+      window.pelaguswallet.on('zoneChanged', handleZoneChanged);
+      window.pelaguswallet.on('disconnect', disconnectWallet);
 
       // Cleanup function
       return () => {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
-        window.ethereum.removeListener('disconnect', handleDisconnect);
+        window.pelaguswallet.removeListener('accountsChanged', handleAccountsChanged);
+        window.pelaguswallet.removeListener('zoneChanged', handleZoneChanged);
+        window.pelaguswallet.removeListener('disconnect', disconnectWallet);
       };
     }
-  }, [checkIfWalletIsConnected, handleAccountsChanged, handleChainChanged, handleDisconnect]);
+  }, [checkIfWalletIsConnected, handleAccountsChanged, handleZoneChanged]);
 
   return {
     account,
@@ -141,6 +182,7 @@ const usePelagusWallet = () => {
     isConnecting,
     error,
     isPelagus,
+    provider,
     connectWallet,
     disconnectWallet,
     isQuaiNetwork

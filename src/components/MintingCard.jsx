@@ -37,6 +37,7 @@ const MintingCard = () => {
     isQuaiNetwork,
     chainId,
     connectWallet,
+    provider
   } = usePelagusWallet();
 
   useEffect(() => {
@@ -67,21 +68,47 @@ const MintingCard = () => {
       return; // The hook will handle the error message
     }
 
+    if (!provider) {
+      setMintingError('Wallet provider not initialized');
+      return;
+    }
+
     setIsMinting(true);
     setMintingError(null);
     
     try {
-      // Here you would normally:
-      // 1. Get the contract instance
-      // 2. Call the mint function
-      // 3. Wait for transaction confirmation
-      
-      // For now, we'll simulate the minting process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      alert('Minting will be implemented when the smart contract is deployed');
+      // Example contract interaction (replace with your actual contract address and ABI)
+      const contractAddress = '0xYourContractAddress';
+      const mintPrice = ethers.parseUnits((0.1 * mintAmount).toString(), 18); // Convert to wei
+
+      // Create transaction object
+      const transaction = {
+        from: account,
+        to: contractAddress,
+        value: mintPrice.toString(),
+        data: '0x', // Add your contract method call data here
+      };
+
+      // Send transaction using Pelagus provider
+      const txHash = await provider.request({
+        method: 'quai_sendTransaction',
+        params: [transaction],
+      });
+
+      // Wait for transaction confirmation
+      const receipt = await provider.request({
+        method: 'quai_getTransactionReceipt',
+        params: [txHash],
+      });
+
+      if (receipt && receipt.status === '0x1') {
+        alert('Successfully minted!');
+      } else {
+        throw new Error('Transaction failed');
+      }
     } catch (error) {
       console.error('Minting error:', error);
-      setMintingError('Failed to mint. Please try again.');
+      setMintingError(error.message || 'Failed to mint. Please try again.');
     } finally {
       setIsMinting(false);
     }
