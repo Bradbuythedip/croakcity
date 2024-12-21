@@ -7,7 +7,6 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import CircularProgress from '@mui/material/CircularProgress';
-import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
 const COINGECKO_API_KEY = 'CG-ByorJkP4D1f5QfzdPzH4eg7w';
@@ -70,14 +69,9 @@ const TableCellWithChange = ({ value, isPercentage = false }) => {
         transition: 'all 0.3s ease'
       }}
     >
-      <motion.span
-        key={value}
-        initial={{ opacity: 0.5, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-      >
+      <span className="transition-all duration-300">
         {isPositive ? '+' : ''}{formattedValue}
-      </motion.span>
+      </span>
     </TableCell>
   );
 };
