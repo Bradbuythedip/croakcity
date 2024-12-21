@@ -1,5 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
 
+// Wait for Pelagus to inject provider
+const waitForPelagus = () => {
+  return new Promise((resolve) => {
+    if (window.ethereum) {
+      return resolve(window.ethereum);
+    }
+
+    let tries = 0;
+    const interval = setInterval(() => {
+      tries++;
+      if (window.ethereum) {
+        clearInterval(interval);
+        return resolve(window.ethereum);
+      }
+      if (tries > 20) { // Wait for max 2 seconds
+        clearInterval(interval);
+        return resolve(null);
+      }
+    }, 100);
+  });
+};
+
 // Quai Network Chain IDs
 const QUAI_ZONES = {
   PRIME: '0x1',
@@ -25,43 +47,42 @@ const usePelagusWallet = () => {
   const [provider, setProvider] = useState(null);
 
   // Check if Pelagus is installed
-  const isPelagusInstalled = useCallback(() => {
+  const isPelagusInstalled = useCallback(async () => {
     if (typeof window !== 'undefined') {
-      console.log('Window ethereum:', window.ethereum);
-      console.log('Window pelagus:', window.pelagus);
-      console.log('Window pelaguswallet:', window.pelaguswallet);
-      // Pelagus injects both ethereum and pelagus objects
-      return Boolean(window.ethereum?.isPelagus || window.pelagus || window.pelaguswallet);
+      const provider = await waitForPelagus();
+      console.log('Provider after waiting:', provider);
+      if (provider) {
+        // Try to detect if it's Pelagus
+        const chainId = await provider.request({ method: 'eth_chainId' });
+        console.log('Chain ID:', chainId);
+        // We're assuming it's Pelagus if we get a response and chainId is in hex format
+        return Boolean(chainId && chainId.startsWith('0x'));
+      }
     }
     return false;
   }, []);
 
   // Check if we're on Quai Network
   const isQuaiNetwork = useCallback((zoneId) => {
-    return Object.values(QUAI_ZONES).includes(zoneId?.toLowerCase());
+    // For now, accept any chain ID during development
+    return true;
+    // Later we can validate specific chain IDs
+    // return Object.values(QUAI_ZONES).includes(zoneId?.toLowerCase());
   }, []);
 
   // Initialize provider
   const initializeProvider = useCallback(async () => {
     if (typeof window !== 'undefined') {
       try {
-        // Try different possible provider objects
-        const provider = window.pelaguswallet || window.pelagus || window.ethereum;
+        const provider = await waitForPelagus();
+        console.log('Provider during initialization:', provider);
         
         if (!provider) {
           throw new Error('No provider found');
         }
 
-        console.log('Using provider:', provider);
-        
         // Request access to the wallet
-        // Try both Quai and ETH methods as the wallet might support both
-        try {
-          await provider.request({ method: 'quai_requestAccounts' });
-        } catch (e) {
-          console.log('Trying eth_requestAccounts instead');
-          await provider.request({ method: 'eth_requestAccounts' });
-        }
+        await provider.request({ method: 'eth_requestAccounts' });
         
         setProvider(provider);
         return provider;
@@ -75,7 +96,8 @@ const usePelagusWallet = () => {
 
   const checkIfWalletIsConnected = useCallback(async () => {
     try {
-      if (!isPelagusInstalled()) {
+      const hasPelagus = await isPelagusInstalled();
+      if (!hasPelagus) {
         setError('Please install Pelagus wallet');
         return;
       }
@@ -88,21 +110,14 @@ const usePelagusWallet = () => {
         return;
       }
 
-      // Get the zone (chain) ID
-      let zoneId;
-      try {
-        zoneId = await web3Provider.request({ method: 'quai_zoneId' });
-      } catch (e) {
-        console.log('Trying chainId instead');
-        zoneId = await web3Provider.request({ method: 'eth_chainId' });
-      }
-      console.log('Got zone/chain ID:', zoneId);
-      
-      // For now, accept any chain ID as we're debugging
-      setChainId(zoneId);
+      // Get the chain ID
+      const chainId = await web3Provider.request({ method: 'eth_chainId' });
+      console.log('Got chain ID:', chainId);
+      setChainId(chainId);
 
       // Get accounts
-      const accounts = await web3Provider.request({ method: 'quai_accounts' });
+      const accounts = await web3Provider.request({ method: 'eth_accounts' });
+      console.log('Got accounts:', accounts);
       if (accounts.length > 0) {
         setAccount(accounts[0]);
         setError(null);
@@ -111,7 +126,7 @@ const usePelagusWallet = () => {
       console.error('Error checking wallet connection:', error);
       setError('Error checking wallet connection');
     }
-  }, [isPelagusInstalled, initializeProvider, isQuaiNetwork]);
+  }, [isPelagusInstalled, initializeProvider]);
 
   const connectWallet = async () => {
     try {
@@ -180,28 +195,31 @@ const usePelagusWallet = () => {
   }, [isQuaiNetwork]);
 
   useEffect(() => {
-    checkIfWalletIsConnected();
-
-    // Get the provider (try all possible objects)
-    const provider = window.pelaguswallet || window.pelagus || window.ethereum;
-    
-    if (provider) {
-      console.log('Setting up event listeners on provider:', provider);
+    const setupWallet = async () => {
+      // Wait for provider to be injected
+      const provider = await waitForPelagus();
       
-      // Set up event listeners
-      provider.on('accountsChanged', handleAccountsChanged);
-      provider.on('chainChanged', handleZoneChanged); // Some implementations use chainChanged
-      provider.on('zoneChanged', handleZoneChanged);  // Some might use zoneChanged
-      provider.on('disconnect', disconnectWallet);
+      if (provider) {
+        console.log('Setting up event listeners on provider:', provider);
+        
+        // Set up event listeners
+        provider.on('accountsChanged', handleAccountsChanged);
+        provider.on('chainChanged', handleZoneChanged);
+        
+        // Initial connection check
+        checkIfWalletIsConnected();
+      }
+    };
 
-      // Cleanup function
-      return () => {
-        provider.removeListener('accountsChanged', handleAccountsChanged);
-        provider.removeListener('chainChanged', handleZoneChanged);
-        provider.removeListener('zoneChanged', handleZoneChanged);
-        provider.removeListener('disconnect', disconnectWallet);
-      };
-    }
+    setupWallet();
+
+    // Cleanup function
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleZoneChanged);
+      }
+    };
   }, [checkIfWalletIsConnected, handleAccountsChanged, handleZoneChanged]);
 
   return {
