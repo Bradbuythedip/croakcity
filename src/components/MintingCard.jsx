@@ -28,7 +28,13 @@ const MintingCard = () => {
   const [mintAmount, setMintAmount] = useState(1);
   const [isMinting, setIsMinting] = useState(false);
   const [mintingError, setMintingError] = useState(null);
-  const mintPrice = 0.1; // QUAI per NFT
+  const [hasMinted, setHasMinted] = useState(false); // Track if user has minted before
+  
+  // Calculate price based on whether user has minted before
+  const getMintPrice = (amount) => {
+    if (!hasMinted) return 0; // First mint is free
+    return 1 * amount; // 1 QUAI per NFT after first mint
+  };
   
   const {
     account,
@@ -134,7 +140,7 @@ const MintingCard = () => {
             Croak City NFT
           </Typography>
           <Typography variant="body1" className="text-gray-300">
-            Mint your unique Croak City NFT on the Quai Network
+            Mint your unique Croak City NFT on the Quai Network • <span className="text-green-400 font-medium">First Mint FREE!</span>
           </Typography>
         </div>
 
@@ -161,7 +167,8 @@ const MintingCard = () => {
           />
           <div className="flex justify-between mt-4">
             <Typography className="text-white/90">
-              Price: {(mintPrice * mintAmount).toFixed(2)} QUAI
+              Price: {getMintPrice(mintAmount)} QUAI{' '}
+              {!hasMinted && <span className="text-green-400">(First mint FREE!)</span>}
             </Typography>
             <Typography className="text-white/90">
               Amount: {mintAmount}
@@ -169,26 +176,37 @@ const MintingCard = () => {
           </div>
         </div>
 
-        <Button
-          variant="contained"
-          fullWidth
-          sx={{
-            background: 'linear-gradient(45deg, #4CAF50 30%, #45a049 90%)',
-            boxShadow: '0 3px 5px 2px rgba(76, 175, 80, .3)',
-            height: 48,
-            '&:disabled': {
-              background: 'linear-gradient(45deg, #666 30%, #555 90%)',
-            }
-          }}
-          onClick={handleMint}
-          disabled={isButtonDisabled()}
-        >
-          {getButtonText()}
-        </Button>
+        <div className="relative">
+          <Button
+            variant="contained"
+            fullWidth
+            sx={{
+              background: 'linear-gradient(45deg, #4CAF50 30%, #45a049 90%)',
+              boxShadow: '0 3px 5px 2px rgba(76, 175, 80, .3)',
+              height: 48,
+              '&:disabled': {
+                background: 'linear-gradient(45deg, #666 30%, #555 90%)',
+              }
+            }}
+            disabled={true}
+          >
+            Minting Coming Soon
+          </Button>
+          
+          {/* Overlay with coming soon badge */}
+          <div className="absolute -top-3 right-0 transform translate-x-1/4">
+            <div className="bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full animate-pulse">
+              Coming Soon
+            </div>
+          </div>
+        </div>
 
-        <div className="text-center text-sm">
+        <div className="space-y-2 text-center text-sm">
           <Typography variant="body2" className="text-gray-400">
             Maximum 10 NFTs per transaction
+          </Typography>
+          <Typography variant="body2" className="text-green-400 font-medium">
+            First mint is FREE! • Subsequent mints 1 QUAI each
           </Typography>
         </div>
       </div>
