@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import Header from './components/Header';
 import MintingCard from './components/MintingCard';
 import SentimentAnalysis from './components/SentimentAnalysis';
+import FearGreedIndex from './components/FearGreedIndex';
 import Roadmap from './components/Roadmap';
 import Footer from './components/Footer';
 
@@ -93,6 +94,7 @@ function App() {
             
             <div className="space-y-16">
               <MintingCard />
+              <FearGreedIndex />
               <SentimentAnalysis />
               <Roadmap />
             </div>
