@@ -27,8 +27,11 @@ const usePelagusWallet = () => {
   // Check if Pelagus is installed
   const isPelagusInstalled = useCallback(() => {
     if (typeof window !== 'undefined') {
-      const { pelaguswallet } = window;
-      return Boolean(pelaguswallet && pelaguswallet.isQuai);
+      console.log('Window ethereum:', window.ethereum);
+      console.log('Window pelagus:', window.pelagus);
+      console.log('Window pelaguswallet:', window.pelaguswallet);
+      // Pelagus injects both ethereum and pelagus objects
+      return Boolean(window.ethereum?.isPelagus || window.pelagus || window.pelaguswallet);
     }
     return false;
   }, []);
@@ -40,15 +43,28 @@ const usePelagusWallet = () => {
 
   // Initialize provider
   const initializeProvider = useCallback(async () => {
-    if (typeof window !== 'undefined' && window.pelaguswallet) {
+    if (typeof window !== 'undefined') {
       try {
-        // Request access to the wallet
-        await window.pelaguswallet.request({ method: 'quai_requestAccounts' });
+        // Try different possible provider objects
+        const provider = window.pelaguswallet || window.pelagus || window.ethereum;
         
-        // Create Web3Provider
-        const web3Provider = window.pelaguswallet;
-        setProvider(web3Provider);
-        return web3Provider;
+        if (!provider) {
+          throw new Error('No provider found');
+        }
+
+        console.log('Using provider:', provider);
+        
+        // Request access to the wallet
+        // Try both Quai and ETH methods as the wallet might support both
+        try {
+          await provider.request({ method: 'quai_requestAccounts' });
+        } catch (e) {
+          console.log('Trying eth_requestAccounts instead');
+          await provider.request({ method: 'eth_requestAccounts' });
+        }
+        
+        setProvider(provider);
+        return provider;
       } catch (error) {
         console.error('Error initializing provider:', error);
         throw error;
@@ -73,11 +89,16 @@ const usePelagusWallet = () => {
       }
 
       // Get the zone (chain) ID
-      const zoneId = await web3Provider.request({ method: 'quai_zoneId' });
-      if (!isQuaiNetwork(zoneId)) {
-        setError('Please connect to Quai Network');
-        return;
+      let zoneId;
+      try {
+        zoneId = await web3Provider.request({ method: 'quai_zoneId' });
+      } catch (e) {
+        console.log('Trying chainId instead');
+        zoneId = await web3Provider.request({ method: 'eth_chainId' });
       }
+      console.log('Got zone/chain ID:', zoneId);
+      
+      // For now, accept any chain ID as we're debugging
       setChainId(zoneId);
 
       // Get accounts
@@ -161,17 +182,24 @@ const usePelagusWallet = () => {
   useEffect(() => {
     checkIfWalletIsConnected();
 
-    if (window.pelaguswallet) {
-      // Set up event listeners for Pelagus wallet
-      window.pelaguswallet.on('accountsChanged', handleAccountsChanged);
-      window.pelaguswallet.on('zoneChanged', handleZoneChanged);
-      window.pelaguswallet.on('disconnect', disconnectWallet);
+    // Get the provider (try all possible objects)
+    const provider = window.pelaguswallet || window.pelagus || window.ethereum;
+    
+    if (provider) {
+      console.log('Setting up event listeners on provider:', provider);
+      
+      // Set up event listeners
+      provider.on('accountsChanged', handleAccountsChanged);
+      provider.on('chainChanged', handleZoneChanged); // Some implementations use chainChanged
+      provider.on('zoneChanged', handleZoneChanged);  // Some might use zoneChanged
+      provider.on('disconnect', disconnectWallet);
 
       // Cleanup function
       return () => {
-        window.pelaguswallet.removeListener('accountsChanged', handleAccountsChanged);
-        window.pelaguswallet.removeListener('zoneChanged', handleZoneChanged);
-        window.pelaguswallet.removeListener('disconnect', disconnectWallet);
+        provider.removeListener('accountsChanged', handleAccountsChanged);
+        provider.removeListener('chainChanged', handleZoneChanged);
+        provider.removeListener('zoneChanged', handleZoneChanged);
+        provider.removeListener('disconnect', disconnectWallet);
       };
     }
   }, [checkIfWalletIsConnected, handleAccountsChanged, handleZoneChanged]);
